@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TT GG Transmissão</title>
+  <meta name="description" content="Compartilhe sua tela de forma rápida e segura — TT GG Transmissão." />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f8fff'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='14' font-weight='800' fill='white' text-anchor='middle'%3ETT%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <main class="landing">
+    <div class="landing-bg"></div>
+    <div class="landing-inner">
+      <header class="landing-header">
+        <div class="brand">
+          <div class="brand-mark">TT</div>
+          <div class="brand-text">TT GG <span>Transmissão</span></div>
+        </div>
+      </header>
+
+      <section class="landing-section">
+        <div>
+          <h1 class="landing-title">
+            Sua tela, ao vivo,<br />
+            <span class="accent">direto para a sala.</span>
+          </h1>
+          <p class="landing-lead">
+            Crie uma sala em um clique, compartilhe o código e transmita a tela pelo navegador.
+            Sem instalar nada, sem cadastro.
+          </p>
+          <ul class="features">
+            <li>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+              Sala instantânea, entra por código ou link
+            </li>
+            <li>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+              Conexão direta entre navegadores (WebRTC)
+            </li>
+            <li>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Vários participantes, até 3 telas por vez
+            </li>
+          </ul>
+        </div>
+
+        <div class="card join-card">
+          <h2>Entrar</h2>
+          <p class="hint">Escolha um nome para ser identificado na sala.</p>
+
+          <div class="name-row">
+            <button type="button" class="avatar-btn" id="avatarBtn" title="Escolher foto (fica só neste navegador)">
+              <span id="avatarInitial">?</span>
+              <img id="avatarPreview" class="hidden" alt="" />
+              <span class="overlay">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+              </span>
+            </button>
+            <input type="file" id="avatarFile" accept="image/*" class="sr-only" />
+            <input class="input" id="nameInput" placeholder="Seu nome" maxlength="24" autocomplete="nickname" />
+          </div>
+
+          <button class="btn-primary mt-4 w-full" id="createBtn">Criar sala</button>
+
+          <div class="divider">ou</div>
+
+          <label class="field-label" for="codeInput">Código da sala</label>
+          <div class="code-row">
+            <input class="input" id="codeInput" placeholder="RVDA-X7K2 ou link de convite" />
+            <button class="btn-secondary" id="joinBtn">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+              Entrar
+            </button>
+          </div>
+
+          <p class="form-error hidden" id="formError"></p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/lib.js"></script>
+  <script src="/home.js"></script>
+</body>
+</html>
