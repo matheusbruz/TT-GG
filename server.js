@@ -33,6 +33,8 @@ const CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 const CODE_RE = /^RVDA-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$/;
 const NAME_RE = /^[\p{L}\p{N}\s._-]+$/u;
 const MAX_SHARES = 3;
+const MAX_CHAT_LEN = 500;
+const CHAT_HISTORY = 200;
 const ROOM_IDLE_TTL_MS = 30 * 60 * 1000;
 const DISCONNECT_GRACE_MS = 5000;
 
@@ -108,6 +110,7 @@ function publicParticipant(p) {
     micOn: p.micOn,
     muted: p.muted,
     deafened: p.deafened,
+    speaking: Boolean(p.speaking),
   };
 }
 
@@ -139,6 +142,7 @@ function createRoom(displayName, avatar) {
     createdAt: new Date().toISOString(),
     participants: new Map(),
     idleSince: Date.now(),
+    chat: [],
   };
   const self = {
     id: crypto.randomUUID(),
@@ -151,6 +155,7 @@ function createRoom(displayName, avatar) {
     micOn: false,
     muted: false,
     deafened: false,
+    speaking: false,
     socketId: null,
   };
   room.participants.set(self.id, self);
@@ -192,6 +197,7 @@ function joinRoom(code, displayName, avatar, session) {
     micOn: false,
     muted: false,
     deafened: false,
+    speaking: false,
     socketId: null,
   };
   room.participants.set(self.id, self);
@@ -482,7 +488,13 @@ app.post('/rooms/:code/participants/:id/kick', (req, res) => {
 app.post('/rooms/:code/participants/:id/server-mute', (req, res) => {
   participantAction(req, res, ({ room }, target) => {
     target.muted = !target.muted;
-    if (target.muted) target.micOn = false;
+    if (target.muted) {
+      target.micOn = false;
+      if (target.speaking) {
+        target.speaking = false;
+        nsp.to(room.code).emit('speaking:update', { id: target.id, speaking: false });
+      }
+    }
     emitToParticipant(room, target.id, 'muted', { muted: target.muted });
     broadcastParticipants(room);
     res.json({ muted: target.muted });
@@ -555,6 +567,9 @@ nsp.on('connection', (socket) => {
 
     socket.emit('rtc:config', { iceServers: ICE_SERVERS });
     socket.emit('room:joined', { self: publicParticipant(self), code: roomCode });
+    if (Array.isArray(room.chat) && room.chat.length) {
+      socket.emit('chat:history', room.chat);
+    }
     broadcastParticipants(room);
   });
 
@@ -568,8 +583,52 @@ nsp.on('connection', (socket) => {
     const next = self.muted ? false : Boolean(on);
     if (self.micOn !== next) {
       self.micOn = next;
+      if (!next && self.speaking) {
+        self.speaking = false;
+        nsp.to(room.code).emit('speaking:update', { id: self.id, speaking: false });
+      }
       broadcastParticipants(room);
     }
+  });
+
+  // Indica quem está falando no microfone agora (borda verde no avatar).
+  socket.on('room:speaking', ({ on } = {}) => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room) return;
+    const self = room.participants.get(session.participantId);
+    if (!self) return;
+    const next = Boolean(on) && self.micOn && !self.muted && !self.deafened;
+    if (self.speaking === next) return;
+    self.speaking = next;
+    nsp.to(room.code).emit('speaking:update', { id: self.id, speaking: next });
+  });
+
+  // Chat da sala: valida, guarda o histórico e retransmite para a sala.
+  socket.on('chat:send', ({ text } = {}) => {
+    const roomCode = socket.data.roomCode;
+    const room = rooms.get(roomCode);
+    if (!room || room.status !== 'ACTIVE') return;
+    const self = room.participants.get(session.participantId);
+    if (!self) return;
+
+    const message = String(text || '').replace(/\s+/g, ' ').trim().slice(0, MAX_CHAT_LEN);
+    if (!message) return;
+
+    const entry = {
+      id: crypto.randomUUID(),
+      from: self.id,
+      name: self.displayName,
+      avatar: self.avatar || null,
+      role: self.role,
+      text: message,
+      ts: Date.now(),
+    };
+
+    if (!Array.isArray(room.chat)) room.chat = [];
+    room.chat.push(entry);
+    if (room.chat.length > CHAT_HISTORY) room.chat.splice(0, room.chat.length - CHAT_HISTORY);
+
+    nsp.to(roomCode).emit('chat:message', entry);
   });
 
   // Estado do compartilhamento publicado pelo cliente.
@@ -607,6 +666,10 @@ nsp.on('connection', (socket) => {
 
     self.socketId = null;
     self.status = 'OFFLINE';
+    if (self.speaking) {
+      self.speaking = false;
+      nsp.to(room.code).emit('speaking:update', { id: self.id, speaking: false });
+    }
 
     // Grace period: o cliente pode estar apenas reconectando.
     clearPending(self.id);

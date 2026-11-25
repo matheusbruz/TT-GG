@@ -94,12 +94,40 @@
         <span class="label" id="shareLabel">Compartilhar tela</span>
       </button>
 
+      <button class="ctrl" id="shareSettingsBtn" title="Configurações da transmissão">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span class="label">Transmissão</span>
+      </button>
+
+      <button class="ctrl" id="chatBtn" title="Abrir chat da sala">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span class="label">Chat</span>
+        <span class="ctrl-badge hidden" id="chatBadge">0</span>
+      </button>
+
       <button class="ctrl leave" id="leaveCtrlBtn" title="Sair da sala">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
         <span class="label">Sair</span>
       </button>
     </div>
   </div>
+
+  <!-- painel: chat da sala -->
+  <aside class="chat-panel hidden" id="chatPanel" aria-label="Chat da sala">
+    <header class="chat-head">
+      <p class="aside-label">Chat da sala</p>
+      <button class="icon-btn" id="chatClose" title="Fechar chat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
+      </button>
+    </header>
+    <div class="chat-messages" id="chatMessages">
+      <p class="chat-empty">Nenhuma mensagem ainda. Diga oi!</p>
+    </div>
+    <form class="chat-form" id="chatForm">
+      <input class="input" id="chatInput" placeholder="Mensagem…" maxlength="500" autocomplete="off" />
+      <button type="submit" class="btn-primary" id="chatSend">Enviar</button>
+    </form>
+  </aside>
 
   <!-- modal: pedir nome -->
   <div class="modal-overlay hidden" id="nameModal">
@@ -136,6 +164,55 @@
       <div class="modal-actions">
         <button class="btn-ghost" id="regenCancel">Cancelar</button>
         <button class="btn-primary" id="regenConfirm">Trocar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- modal: configurações da transmissão -->
+  <div class="modal-overlay hidden" id="shareModal">
+    <div class="card modal" role="dialog" aria-modal="true" aria-labelledby="shareModalTitle">
+      <h2 id="shareModalTitle">Configurações da transmissão</h2>
+
+      <div class="share-settings">
+        <div class="setting-group">
+          <p class="field-label">Resolução</p>
+          <div class="seg" id="segResolution" role="group" aria-label="Resolução da transmissão">
+            <button type="button" class="seg-btn" data-value="720p">720p</button>
+            <button type="button" class="seg-btn" data-value="1080p">1080p</button>
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <p class="field-label">Taxa de quadros</p>
+          <div class="seg" id="segFps" role="group" aria-label="Taxa de quadros da transmissão">
+            <button type="button" class="seg-btn" data-value="30">30 fps</button>
+            <button type="button" class="seg-btn" data-value="60">60 fps</button>
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <p class="field-label">Áudio transmitido</p>
+          <select class="input" id="shareAudioSelect" aria-label="Fonte do áudio transmitido">
+            <option value="system">Áudio do computador (tela ou guia)</option>
+            <option value="mic">Microfone</option>
+            <option value="none">Sem áudio</option>
+          </select>
+          <select class="input mt-4 hidden" id="shareMicSelect" aria-label="Microfone transmitido"></select>
+          <p class="setting-hint" id="shareAudioHint"></p>
+        </div>
+
+        <p class="setting-hint live hidden" id="shareLiveHint">
+          Você está transmitindo: as alterações são aplicadas imediatamente.
+        </p>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary hidden" id="switchScreenBtn">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-3"/><path d="M8 21h8"/><path d="M12 17v4"/><rect x="7" y="9" width="7" height="6" rx="1"/></svg>
+          Trocar tela
+        </button>
+        <button type="button" class="btn-ghost" id="shareModalClose">Fechar</button>
+        <button type="button" class="btn-primary hidden" id="shareModalStart">Compartilhar tela</button>
       </div>
     </div>
   </div>

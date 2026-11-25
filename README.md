@@ -48,7 +48,15 @@ Observações para deploy:
 - Criar sala (você vira dono/OWNER) e gerar link de convite.
 - Entrar em sala por código ou link.
 - Chat de áudio em tempo real (WebRTC, mesh P2P).
-- Compartilhar tela com áudio (até 3 simultâneos, 1,5 Mbps / 15 fps / VP8).
+- Chat da sala em texto (sem histórico no servidor, até 200 mensagens, 500 caracteres, aviso de mensagem não lida).
+- Compartilhar tela (até 3 simultâneos) com qualidade ajustável:
+  - Resolução **720p** ou **1080p** e **30 fps** ou **60 fps** (bitrate de 2,5 a 7 Mbps conforme a escolha).
+  - Escolha da **fonte de áudio**: áudio do computador (tela/guia), microfone ou nenhum — por padrão não captura o sistema inteiro.
+  - Preferências lembradas no `localStorage` (`ttgg_share_resolution`, `ttgg_share_fps`, `ttgg_share_audio`, `ttgg_share_mic`).
+- Durante a transmissão: **trocar a tela** e **trocar a fonte de áudio** sem encerrar, e abrir as configurações pelo botão no próprio tile.
+- Volume individual por transmissão (slider + mudo em cada tile) e volume individual por microfone de participante.
+- Indicador visual de quem está falando (borda verde no avatar, sincronizado para todos via `speaking:update`).
+- Visualização da transmissão reduzida (grade com largura máxima), mantendo o botão de **tela cheia**.
 - Moderação do dono: expulsar, silenciar (server-mute), ensurdecer (server-deafen), parar compartilhamento de outro.
 - Trocar o código da sala (regenerate-code) e encerrar a sala.
 - Persistência de nome/avatar no `localStorage` (`ttgg_display_name`, `ttgg_avatar`).
