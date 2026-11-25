@@ -25,8 +25,6 @@
   const emptyState = $('emptyState');
   const toast = $('toast');
 
-  const micBtn = $('micBtn');
-  const micLabel = $('micLabel');
   const deafenBtn = $('deafenBtn');
   const deafenLabel = $('deafenLabel');
   const shareBtn = $('shareBtn');
@@ -49,7 +47,6 @@
   const regenCancel = $('regenCancel');
   const regenConfirm = $('regenConfirm');
 
-  const shareSettingsBtn = $('shareSettingsBtn');
   const shareModal = $('shareModal');
   const segResolution = $('segResolution');
   const segFps = $('segFps');
@@ -84,9 +81,7 @@
   let iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
   let phase = 'loading'; // loading | error | need-name | ready
 
-  let localMicTrack = null;
   let localShareStream = null;
-  let micOn = false;
   let serverMuted = false;
   let deafened = false;
   let isSharing = false;
@@ -110,14 +105,6 @@
   let shareAudioTrack = null; // áudio transmitido no momento
   let shareVideoTrack = null; // vídeo transmitido no momento (original ou redimensionado)
   let videoPipeline = null; // pipeline de redimensionamento, quando ativo
-
-  // Indicador de quem está falando (análise local do próprio microfone).
-  let speakCtx = null;
-  let speakAnalyser = null;
-  let speakData = null;
-  let speakSource = null;
-  let speakTimer = null;
-  let speakingState = false;
 
   // Chat da sala.
   let chatUnread = 0;
@@ -222,13 +209,6 @@
     };
 
     // Publica os tracks locais já conhecidos neste novo par.
-    if (localMicTrack) {
-      try {
-        peer.micSender = pc.addTrack(localMicTrack);
-      } catch {
-        /* track já adicionado */
-      }
-    }
     if (localShareStream) {
       for (const track of localShareStream.getTracks()) {
         try {
@@ -441,117 +421,10 @@
 
   /* ------------------------------- mídia local ---------------------------- */
 
-  async function ensureMicTrack() {
-    if (localMicTrack) return localMicTrack;
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
-    localMicTrack = stream.getAudioTracks()[0];
-    localMicTrack.addEventListener('ended', () => {
-      if (micOn) toggleMic();
-      stopSpeakingMeter();
-    });
-    for (const peer of peers.values()) {
-      try {
-        peer.micSender = peer.pc.addTrack(localMicTrack);
-      } catch {
-        /* já adicionado */
-      }
-    }
-    startSpeakingMeter();
-    return localMicTrack;
-  }
-
-  async function toggleMic() {
-    if (serverMuted) {
-      showToast('Seu microfone foi silenciado pelo dono da sala.');
-      return;
-    }
-    try {
-      if (!micOn) {
-        await ensureMicTrack();
-        localMicTrack.enabled = true;
-        micOn = true;
-        startSpeakingMeter();
-      } else {
-        localMicTrack.enabled = false;
-        micOn = false;
-        setSpeaking(false);
-      }
-      if (socket && socket.connected) socket.emit('room:mic', { on: micOn });
-      renderControls();
-    } catch {
-      showToast('Não foi possível acessar seu microfone. Verifique as permissões do navegador.');
-    }
-  }
-
   function toggleDeafen() {
     deafened = !deafened;
     applyAudioVolumes();
     renderControls();
-  }
-
-  /* ------------------------ indicador de fala --------------------------- */
-
-  /**
-   * Mede o nível do próprio microfone e avisa a sala (borda verde no avatar).
-   * A análise é local: o áudio dos outros não passa pelo Web Audio, então a
-   * escuta deles não é afetada.
-   */
-  function startSpeakingMeter() {
-    if (!micOn || !localMicTrack) return;
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      if (!speakCtx) {
-        speakCtx = new AudioCtx();
-        speakAnalyser = speakCtx.createAnalyser();
-        speakAnalyser.fftSize = 512;
-        speakData = new Uint8Array(speakAnalyser.fftSize);
-        speakSource = speakCtx.createMediaStreamSource(new MediaStream([localMicTrack]));
-        speakSource.connect(speakAnalyser); // não vai para destination: só mede
-      }
-      if (speakCtx.state === 'suspended') speakCtx.resume().catch(() => {});
-      if (!speakTimer) speakTimer = setInterval(measureSpeaking, 150);
-    } catch {
-      /* sem Web Audio: sem indicador de fala */
-    }
-  }
-
-  function stopSpeakingMeter() {
-    clearInterval(speakTimer);
-    speakTimer = null;
-    setSpeaking(false);
-  }
-
-  function measureSpeaking() {
-    if (!speakAnalyser || !micOn || serverMuted || !localMicTrack || !localMicTrack.enabled) {
-      setSpeaking(false);
-      return;
-    }
-    speakAnalyser.getByteTimeDomainData(speakData);
-    let sum = 0;
-    for (let i = 0; i < speakData.length; i++) {
-      const v = (speakData[i] - 128) / 128;
-      sum += v * v;
-    }
-    const rms = Math.sqrt(sum / speakData.length);
-    // Histerese: liga mais alto e desliga mais baixo para não piscar.
-    setSpeaking(speakingState ? rms > 0.018 : rms > 0.04);
-  }
-
-  function setSpeaking(next) {
-    if (next === speakingState) return;
-    speakingState = next;
-    const me = participants.get(self && self.id);
-    if (me) me.speaking = next;
-    if (socket && socket.connected) socket.emit('room:speaking', { on: next });
-    applySpeakingClass(self && self.id, next);
-  }
-
-  function applySpeakingClass(participantId, on) {
-    const el = participantList.querySelector(`.participant[data-id="${participantId}"] [data-avatar]`);
-    if (el) el.classList.toggle('speaking', Boolean(on));
   }
 
   /* ------------------------------ volumes -------------------------------- */
@@ -570,6 +443,24 @@
       el.volume = volumeOf(kind === 'share' ? shareVolumes : peerVolumes, peerId);
     }
   }
+
+  /** Se o elemento de áudio ficou pausado, tenta retomar o playback (ex.: após troca de aba). */
+  function resumeRemoteAudio() {
+    for (const el of [...remoteAudio.values()]) {
+      if (el.srcObject && el.paused) {
+        el.play().catch(() => {});
+      }
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      resumeRemoteAudio();
+      if (isSharing) {
+        recoverShareAudio().catch(() => {});
+      }
+    }
+  });
 
   /* ----------------------------- mídia da tela --------------------------- */
 
@@ -631,39 +522,82 @@
     const outTrack = outStream.getVideoTracks()[0];
 
     let raf = 0;
+    let timer = 0;
     let lastDraw = 0;
     let stopped = false;
 
-    const draw = (ts) => {
+    const schedule = () => {
       if (stopped) return;
-      raf = requestAnimationFrame(draw);
-      const vw = video.videoWidth;
-      const vh = video.videoHeight;
-      if (!vw || !vh) return;
-      if (ts - lastDraw < 1000 / target.fps - 2) return;
-      lastDraw = ts;
-      const scale = Math.min(1, target.width / vw, target.height / vh);
-      const w = Math.max(2, Math.round((vw * scale) / 2) * 2);
-      const h = Math.max(2, Math.round((vh * scale) / 2) * 2);
-      if (canvas.width !== w || canvas.height !== h) {
-        canvas.width = w;
-        canvas.height = h;
-      }
-      try {
-        ctx.drawImage(video, 0, 0, w, h);
-      } catch {
-        /* frame indisponível */
+      if (document.hidden) {
+        // rAF fica suspenso em abas ocultas: usa timer para manter o canvas produzindo frames.
+        if (!timer) timer = setInterval(() => draw(performance.now()), Math.max(16, Math.round(1000 / target.fps)));
+      } else {
+        if (timer) {
+          clearInterval(timer);
+          timer = 0;
+        }
+        raf = requestAnimationFrame(draw);
       }
     };
 
+    const draw = (ts) => {
+      if (stopped) return;
+      raf = 0;
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (vw && vh) {
+        if (ts - lastDraw >= 1000 / target.fps - 2) {
+          lastDraw = ts;
+          const scale = Math.min(1, target.width / vw, target.height / vh);
+          const w = Math.max(2, Math.round((vw * scale) / 2) * 2);
+          const h = Math.max(2, Math.round((vh * scale) / 2) * 2);
+          if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+          }
+          try {
+            ctx.drawImage(video, 0, 0, w, h);
+          } catch {
+            /* frame indisponível */
+          }
+        }
+      }
+      schedule();
+    };
+
+    const onVisibilityChange = () => {
+      if (stopped) return;
+      if (document.hidden) {
+        if (raf) {
+          cancelAnimationFrame(raf);
+          raf = 0;
+        }
+        if (timer) {
+          clearInterval(timer);
+          timer = 0;
+        }
+      }
+      schedule();
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     video.play().catch(() => {});
-    raf = requestAnimationFrame(draw);
+    schedule();
 
     return {
       track: outTrack,
       stop() {
         stopped = true;
-        cancelAnimationFrame(raf);
+        if (raf) {
+          cancelAnimationFrame(raf);
+          raf = 0;
+        }
+        if (timer) {
+          clearInterval(timer);
+          timer = 0;
+        }
+        document.removeEventListener('visibilitychange', onVisibilityChange);
         try {
           video.pause();
         } catch {
@@ -718,6 +652,36 @@
     }
   }
 
+  /**
+   * Guard: se o track de áudio da transmissão encerrar enquanto ainda estamos
+   * transmitindo (ex.: captura interrompida), tenta reabrir a fonte de áudio.
+   */
+  async function recoverShareAudio() {
+    if (!isSharing) return false;
+    if (shareSettings.audioMode === 'mic') {
+      if (!shareMicTrack || shareMicTrack.readyState !== 'live') {
+        shareMicTrack = await openShareMic();
+      }
+      if (shareMicTrack && shareMicTrack.readyState === 'live') {
+        shareAudioTrack = shareMicTrack;
+        await broadcastShareTrack('audio', shareAudioTrack);
+        return true;
+      }
+      shareSettings.audioMode = 'none';
+      persistShareSettings();
+      renderShareSettings();
+      return false;
+    }
+    if (shareSettings.audioMode === 'system') {
+      if (systemAudioTrack && systemAudioTrack.readyState === 'live') {
+        shareAudioTrack = systemAudioTrack;
+        await broadcastShareTrack('audio', shareAudioTrack);
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** Mantém a stream local (usada na prévia e em novos pares) em dia. */
   function syncLocalShareStream() {
     const wanted = [shareVideoTrack];
@@ -766,6 +730,17 @@
       const display = await navigator.mediaDevices.getDisplayMedia(displayConstraints());
       rawDisplayStream = display;
       systemAudioTrack = display.getAudioTracks()[0] || null;
+
+      if (systemAudioTrack) {
+        systemAudioTrack.addEventListener('ended', () => {
+          if (shareAudioTrack !== systemAudioTrack) return;
+          shareAudioTrack = null;
+          broadcastShareTrack('audio', null);
+          syncLocalShareStream();
+          renderShares();
+          showToast('O áudio da transmissão foi interrompido. Ajuste a fonte em Transmissão para continuar.', 'info');
+        });
+      }
 
       const rawVideo = display.getVideoTracks()[0];
       rawVideo.addEventListener('ended', () => stopSharing());
@@ -992,22 +967,11 @@
   }
 
   function renderControls() {
-    const mutedByServer = serverMuted;
-
-    micBtn.classList.toggle('off', !micOn || mutedByServer);
-    micLabel.textContent = mutedByServer ? 'Silenciado' : micOn ? 'Microfone' : 'Mudo';
-    micBtn.disabled = mutedByServer;
-    micBtn.title = mutedByServer
-      ? 'O dono da sala silenciou seu microfone'
-      : micOn
-        ? 'Desativar microfone'
-        : 'Ativar microfone';
-
     deafenBtn.classList.toggle('off', deafened);
     deafenLabel.textContent = deafened ? 'Áudio silenciado' : 'Áudio';
     deafenBtn.title = deafened ? 'Reativar áudio' : 'Silenciar áudio recebido';
 
-    const selfParticipant = participants.get(self.id);
+    const selfParticipant = self ? participants.get(self.id) : null;
     const selfSharing = isSharing || Boolean(selfParticipant && selfParticipant.sharing);
     const blocked = !selfSharing && activeShareCount() >= 3;
 
@@ -1020,7 +984,6 @@
   function participantTemplate(p) {
     const isSelf = self && p.id === self.id;
     const host = p.role === 'OWNER';
-    const micMuted = p.muted || !p.micOn;
     const wrap = document.createElement('div');
     wrap.className = 'participant';
     wrap.dataset.id = p.id;
@@ -1056,7 +1019,7 @@
          </div>`;
 
     wrap.innerHTML = `
-      <div class="avatar ${p.speaking ? 'speaking' : ''}" data-avatar>${avatarHtml}</div>
+      <div class="avatar" data-avatar>${avatarHtml}</div>
       <div class="participant-main">
         <div class="participant-name">
           <span class="text">${TTGG.escapeHtml(p.displayName)}${isSelf ? ' (você)' : ''}</span>
@@ -1065,7 +1028,6 @@
         <div class="participant-meta">
           <span class="dot ${p.status === 'ONLINE' ? '' : 'off'}"></span>
           <span>${p.status === 'ONLINE' ? 'online' : 'offline'}</span>
-          ${micMuted ? '<span title="Microfone mutado">· mic off</span>' : ''}
           ${p.deafened ? '<span title="Áudio silenciado no servidor">· surdo</span>' : ''}
           ${p.sharing ? '<span class="sharing">· compartilhando</span>' : ''}
         </div>
@@ -1116,11 +1078,9 @@
       if (old) {
         // Atualiza apenas os campos que mudam com frequência.
         const meta = old.querySelector('.participant-meta');
-        const micMuted = p.muted || !p.micOn;
         meta.innerHTML = `
           <span class="dot ${p.status === 'ONLINE' ? '' : 'off'}"></span>
           <span>${p.status === 'ONLINE' ? 'online' : 'offline'}</span>
-          ${micMuted ? '<span title="Microfone mutado">· mic off</span>' : ''}
           ${p.deafened ? '<span title="Áudio silenciado no servidor">· surdo</span>' : ''}
           ${p.sharing ? '<span class="sharing">· compartilhando</span>' : ''}
         `;
@@ -1132,7 +1092,6 @@
             ? `<img src="${p.avatar}" alt="" />`
             : TTGG.escapeHtml(TTGG.initials(p.displayName));
         }
-        oldAvatar.classList.toggle('speaking', Boolean(p.speaking));
         // Re-renderiza se as ações de moderação precisarem aparecer/esconder.
         const hadActions = Boolean(old.querySelector('.participant-actions'));
         const needsActions = isOwner() && p.role !== 'OWNER';
@@ -1464,15 +1423,9 @@
       if (me) {
         if (me.muted !== serverMuted) {
           serverMuted = me.muted;
-          if (serverMuted && micOn) {
-            micOn = false;
-            if (localMicTrack) localMicTrack.enabled = false;
-            setSpeaking(false);
-            if (socket.connected) socket.emit('room:mic', { on: false });
-            showToast('Seu microfone foi silenciado pelo dono da sala.');
-          } else if (!serverMuted) {
-            showToast('Seu microfone foi reativado pelo dono da sala.', 'info');
-          }
+          if (serverMuted) showToast('Seu microfone foi silenciado pelo dono da sala.');
+          else showToast('Seu microfone foi reativado pelo dono da sala.', 'info');
+          renderControls();
         }
         if (me.deafened !== deafened) {
           deafened = me.deafened;
@@ -1492,13 +1445,6 @@
 
     socket.on('rtc:signal', (payload) => {
       if (payload && payload.from) receiveSignal(payload.from, payload.data);
-    });
-
-    socket.on('speaking:update', (payload) => {
-      if (!payload || !payload.id) return;
-      const p = participants.get(payload.id);
-      if (p) p.speaking = Boolean(payload.speaking);
-      applySpeakingClass(payload.id, payload.speaking);
     });
 
     socket.on('chat:history', (list) => renderChatHistory(list));
@@ -1560,7 +1506,6 @@
   }
 
   function teardown() {
-    stopSpeakingMeter();
     stopSharing();
     for (const id of [...peers.keys()]) closePeer(id);
     if (socket) {
@@ -1590,14 +1535,13 @@
     }, 1500);
   });
 
-  micBtn.addEventListener('click', toggleMic);
   deafenBtn.addEventListener('click', toggleDeafen);
   shareBtn.addEventListener('click', () => {
     if (isSharing) {
       stopSharing();
       return;
     }
-    const me = participants.get(self.id);
+    const me = self ? participants.get(self.id) : null;
     if (me && me.sharing) {
       // Sinal preso no servidor (ex.: a página foi recarregada no meio da transmissão).
       if (socket && socket.connected) socket.emit('room:share', { on: false });
@@ -1611,7 +1555,6 @@
   leaveBtn.addEventListener('click', leave);
 
   // Configurações da transmissão (qualidade, áudio e troca de tela).
-  shareSettingsBtn.addEventListener('click', openShareSettings);
   shareModalClose.addEventListener('click', closeShareSettings);
   shareModalStart.addEventListener('click', () => {
     closeShareSettings();
@@ -1745,12 +1688,10 @@
   });
 
   window.addEventListener('beforeunload', () => {
-    stopSpeakingMeter();
     if (videoPipeline) videoPipeline.stop();
     if (localShareStream) stopStreamTracks(localShareStream);
     if (rawDisplayStream) stopStreamTracks(rawDisplayStream);
     if (shareMicTrack) stopTrack(shareMicTrack);
-    if (localMicTrack) stopTrack(localMicTrack);
   });
 
   /* -------------------------------- start --------------------------------- */
@@ -1767,7 +1708,7 @@
       return signalLog;
     },
     get state() {
-      return { phase, micOn, deafened, isSharing, serverMuted, code };
+      return { phase, deafened, isSharing, serverMuted, code };
     },
     // Diagnóstico detalhado dos pares WebRTC (somente leitura).
     pcStates() {
