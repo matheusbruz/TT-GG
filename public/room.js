@@ -48,15 +48,19 @@
   const regenConfirm = $('regenConfirm');
 
   const shareModal = $('shareModal');
+  const segSource = $('segSource');
   const segResolution = $('segResolution');
   const segFps = $('segFps');
+  const shareCameraSelect = $('shareCameraSelect');
   const shareAudioSelect = $('shareAudioSelect');
   const shareMicSelect = $('shareMicSelect');
   const shareAudioHint = $('shareAudioHint');
   const shareLiveHint = $('shareLiveHint');
   const switchScreenBtn = $('switchScreenBtn');
+  const switchScreenLabel = $('switchScreenLabel');
   const shareModalClose = $('shareModalClose');
   const shareModalStart = $('shareModalStart');
+  const shareStartLabel = $('shareStartLabel');
 
   const chatBtn = $('chatBtn');
   const chatBadge = $('chatBadge');
@@ -88,18 +92,24 @@
   let shareBusy = false;
   const signalLog = [];
 
-  // Configurações da transmissão (resolução, fps e fonte do áudio).
+  // Configurações da transmissão (fonte, resolução, fps e fonte do áudio).
   const shareSettings = {
+    source: localStorage.getItem('ttgg_share_source') || 'screen',
     resolution: localStorage.getItem('ttgg_share_resolution') || '720p',
     fps: Number(localStorage.getItem('ttgg_share_fps')) || 30,
     audioMode: localStorage.getItem('ttgg_share_audio') || 'none',
     micDeviceId: localStorage.getItem('ttgg_share_mic') || '',
+    cameraDeviceId: localStorage.getItem('ttgg_share_camera') || '',
   };
+  if (!['screen', 'camera'].includes(shareSettings.source)) shareSettings.source = 'screen';
   if (shareSettings.resolution !== '1080p') shareSettings.resolution = '720p';
   if (shareSettings.fps !== 60) shareSettings.fps = 30;
   if (!['system', 'mic', 'none'].includes(shareSettings.audioMode)) shareSettings.audioMode = 'none';
+  if (shareSettings.source === 'camera' && shareSettings.audioMode === 'system') {
+    shareSettings.audioMode = 'none'; // webcam não expõe áudio do sistema
+  }
 
-  let rawDisplayStream = null; // captura crua do getDisplayMedia (vídeo + áudio do sistema)
+  let rawSourceStream = null; // captura crua (getDisplayMedia ou getUserMedia da webcam)
   let systemAudioTrack = null; // áudio do sistema da captura atual
   let shareMicTrack = null; // microfone aberto só para a transmissão
   let shareAudioTrack = null; // áudio transmitido no momento
@@ -482,12 +492,51 @@
     };
   }
 
+  function isCameraSource() {
+    return shareSettings.source === 'camera';
+  }
+
+  /** Webcam escolhida, com a qualidade pedida (deviceId ideal evita falha se trocar). */
+  function cameraConstraints() {
+    const t = qualityTarget();
+    const video = {
+      width: { ideal: t.width },
+      height: { ideal: t.height },
+      frameRate: { ideal: t.fps },
+    };
+    if (shareSettings.cameraDeviceId) video.deviceId = { ideal: shareSettings.cameraDeviceId };
+    return { video, audio: false };
+  }
+
+  /** Abre a fonte escolhida: tela (getDisplayMedia) ou webcam (getUserMedia). */
+  async function acquireSourceStream(source) {
+    if (source === 'camera') {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('getUserMedia indisponível');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia(cameraConstraints());
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        track.addEventListener('ended', () => {
+          if (isSharing && isCameraSource()) stopSharing();
+        });
+      }
+      return stream;
+    }
+    const stream = await navigator.mediaDevices.getDisplayMedia(displayConstraints());
+    const track = stream.getVideoTracks()[0];
+    if (track) track.addEventListener('ended', () => stopSharing());
+    return stream;
+  }
+
   function persistShareSettings() {
     try {
+      localStorage.setItem('ttgg_share_source', shareSettings.source);
       localStorage.setItem('ttgg_share_resolution', shareSettings.resolution);
       localStorage.setItem('ttgg_share_fps', String(shareSettings.fps));
       localStorage.setItem('ttgg_share_audio', shareSettings.audioMode);
       localStorage.setItem('ttgg_share_mic', shareSettings.micDeviceId);
+      localStorage.setItem('ttgg_share_camera', shareSettings.cameraDeviceId);
     } catch {
       /* storage indisponível */
     }
@@ -704,8 +753,8 @@
       videoPipeline.stop();
       videoPipeline = null;
     }
-    stopStreamTracks(rawDisplayStream);
-    rawDisplayStream = null;
+    stopStreamTracks(rawSourceStream);
+    rawSourceStream = null;
     stopTrack(shareMicTrack);
     shareMicTrack = null;
     systemAudioTrack = null;
@@ -717,19 +766,23 @@
   async function startSharing() {
     if (shareBusy || isSharing) return;
     if (activeShareCount() >= 3 && !participants.get(self.id)?.sharing) {
-      showToast('Já existe uma tela sendo compartilhada');
+      showToast('Já existe uma transmissão ativa');
       return;
+    }
+    if (isCameraSource() && shareSettings.audioMode === 'system') {
+      shareSettings.audioMode = 'none';
+      persistShareSettings();
     }
 
     shareBusy = true;
     renderControls();
     try {
-      // Registra no servidor primeiro (valida limite de 3 telas).
+      // Registra no servidor primeiro (valida limite de 3 transmissões).
       await TTGG.api(`/rooms/${code}/share/start`, { method: 'POST', body: '{}' });
 
-      const display = await navigator.mediaDevices.getDisplayMedia(displayConstraints());
-      rawDisplayStream = display;
-      systemAudioTrack = display.getAudioTracks()[0] || null;
+      const acquired = await acquireSourceStream(shareSettings.source);
+      rawSourceStream = acquired;
+      systemAudioTrack = isCameraSource() ? null : acquired.getAudioTracks()[0] || null;
 
       if (systemAudioTrack) {
         systemAudioTrack.addEventListener('ended', () => {
@@ -742,8 +795,8 @@
         });
       }
 
-      const rawVideo = display.getVideoTracks()[0];
-      rawVideo.addEventListener('ended', () => stopSharing());
+      const rawVideo = acquired.getVideoTracks()[0];
+      if (!rawVideo) throw new Error('A fonte escolhida não enviou vídeo.');
 
       const built = buildVideoTrack(rawVideo);
       videoPipeline = built.pipeline;
@@ -804,24 +857,25 @@
     } finally {
       shareBusy = false;
       renderControls();
+      renderShareSettings();
     }
   }
 
-  /** Troca a tela transmitida sem encerrar a transmissão. */
-  async function switchScreen() {
+  /** Troca a fonte transmitida (tela/webcam) sem encerrar a transmissão. */
+  async function switchSource() {
     if (!isSharing || shareBusy) return false;
     shareBusy = true;
     renderControls();
     try {
-      const display = await navigator.mediaDevices.getDisplayMedia(displayConstraints());
-      const rawVideo = display.getVideoTracks()[0];
-      rawVideo.addEventListener('ended', () => stopSharing());
+      const acquired = await acquireSourceStream(shareSettings.source);
+      const rawVideo = acquired.getVideoTracks()[0];
+      if (!rawVideo) throw new Error('A fonte escolhida não enviou vídeo.');
 
-      const oldDisplay = rawDisplayStream;
+      const oldSource = rawSourceStream;
       const oldPipeline = videoPipeline;
 
-      rawDisplayStream = display;
-      systemAudioTrack = display.getAudioTracks()[0] || null;
+      rawSourceStream = acquired;
+      systemAudioTrack = isCameraSource() ? null : acquired.getAudioTracks()[0] || null;
 
       const built = buildVideoTrack(rawVideo);
       videoPipeline = built.pipeline;
@@ -840,8 +894,8 @@
       }
 
       // Encerra só o que saiu de uso (o áudio ainda transmitido é preservado).
-      if (oldDisplay) {
-        for (const track of oldDisplay.getTracks()) {
+      if (oldSource) {
+        for (const track of oldSource.getTracks()) {
           if (track !== shareAudioTrack) stopTrack(track);
         }
       }
@@ -849,23 +903,66 @@
       syncLocalShareStream();
       renderShares();
       renderShareSettings();
-      showToast('Tela trocada com sucesso.', 'info');
+      showToast(isCameraSource() ? 'Câmera trocada com sucesso.' : 'Tela trocada com sucesso.', 'info');
       if (audioWarning) showToast(audioWarning, 'info');
       return true;
     } catch (err) {
-      if (err && err.name === 'NotAllowedError') showToast('Troca de tela cancelada.', 'info');
-      else showToast('Não foi possível trocar a tela.');
+      if (err && err.name === 'NotAllowedError') showToast('Troca de fonte cancelada.', 'info');
+      else showToast('Não foi possível trocar a fonte.');
       return false;
     } finally {
       shareBusy = false;
+      renderControls();
+      renderShareSettings();
+    }
+  }
+
+  /** Alterna entre tela e webcam — também com a transmissão já no ar. */
+  async function setShareSource(source) {
+    if (shareBusy || shareSettings.source === source) return;
+    const previous = shareSettings.source;
+    const previousAudio = shareSettings.audioMode;
+    shareSettings.source = source;
+
+    if (source === 'camera' && shareSettings.audioMode === 'system') {
+      shareSettings.audioMode = 'none';
+      if (isSharing) {
+        await broadcastShareTrack('audio', null);
+        shareAudioTrack = null;
+        stopTrack(shareMicTrack);
+        shareMicTrack = null;
+      }
+      showToast('Áudio do sistema não existe na webcam: fonte ajustada para sem áudio.', 'info');
+    }
+    persistShareSettings();
+
+    if (!isSharing) {
+      renderShareSettings();
+      renderControls();
+      await populateCameraDevices();
+      return;
+    }
+
+    const ok = await switchSource();
+    if (!ok) {
+      shareSettings.source = previous;
+      shareSettings.audioMode = previousAudio;
+      persistShareSettings();
+      await recoverShareAudio().catch(() => {});
+      renderShareSettings();
       renderControls();
     }
   }
 
   /** Aplica resolução/fps escolhidos a uma transmissão já em andamento. */
   async function applyVideoQuality() {
-    if (!isSharing || shareBusy || !rawDisplayStream) return;
-    const rawVideo = rawDisplayStream.getVideoTracks()[0];
+    if (!isSharing || shareBusy || !rawSourceStream) return;
+    if (isCameraSource()) {
+      // A câmera precisa ser reaberta para aplicar resolução/fps pedidos.
+      await switchSource();
+      return;
+    }
+    const rawVideo = rawSourceStream.getVideoTracks()[0];
     if (!rawVideo) return;
 
     const built = buildVideoTrack(rawVideo);
@@ -913,7 +1010,7 @@
         await broadcastShareTrack('audio', shareAudioTrack);
       } else {
         showToast('Para transmitir o áudio do sistema é preciso escolher a tela novamente.', 'info');
-        const ok = await switchScreen();
+        const ok = await switchSource();
         if (!ok || !systemAudioTrack || systemAudioTrack.readyState !== 'live') {
           shareSettings.audioMode = previous;
           persistShareSettings();
@@ -976,9 +1073,13 @@
     const blocked = !selfSharing && activeShareCount() >= 3;
 
     shareBtn.classList.toggle('sharing', selfSharing);
-    shareLabel.textContent = selfSharing ? 'Encerrar transmissão' : 'Compartilhar tela';
+    shareLabel.textContent = selfSharing
+      ? 'Encerrar transmissão'
+      : isCameraSource()
+        ? 'Compartilhar webcam'
+        : 'Compartilhar tela';
     shareBtn.disabled = shareBusy || (!selfSharing && blocked);
-    shareBtn.title = blocked ? 'Já existe uma tela sendo compartilhada' : shareLabel.textContent;
+    shareBtn.title = blocked ? 'Já existe uma transmissão ativa' : shareLabel.textContent;
   }
 
   function participantTemplate(p) {
@@ -1230,6 +1331,7 @@
     shareModal.classList.remove('hidden');
     renderShareSettings();
     populateMicDevices();
+    populateCameraDevices();
   }
 
   function closeShareSettings() {
@@ -1237,6 +1339,12 @@
   }
 
   function renderShareSettings() {
+    const camera = isCameraSource();
+
+    for (const btn of segSource.querySelectorAll('.seg-btn')) {
+      btn.classList.toggle('active', btn.dataset.value === shareSettings.source);
+      btn.disabled = shareBusy;
+    }
     for (const btn of segResolution.querySelectorAll('.seg-btn')) {
       btn.classList.toggle('active', btn.dataset.value === shareSettings.resolution);
       btn.disabled = shareBusy;
@@ -1246,13 +1354,23 @@
       btn.disabled = shareBusy;
     }
 
+    shareCameraSelect.classList.toggle('hidden', !camera);
+    shareCameraSelect.disabled = shareBusy;
+
     shareAudioSelect.value = shareSettings.audioMode;
     shareAudioSelect.disabled = shareBusy;
+    const systemOption = shareAudioSelect.querySelector('option[value="system"]');
+    if (systemOption) {
+      systemOption.disabled = camera;
+      systemOption.hidden = camera;
+    }
     shareMicSelect.classList.toggle('hidden', shareSettings.audioMode !== 'mic');
     shareMicSelect.disabled = shareBusy;
 
     shareLiveHint.classList.toggle('hidden', !isSharing);
     switchScreenBtn.classList.toggle('hidden', !isSharing);
+    switchScreenLabel.textContent = camera ? 'Trocar câmera' : 'Trocar tela';
+    shareStartLabel.textContent = camera ? 'Transmitir webcam' : 'Compartilhar tela';
     shareModalStart.classList.toggle('hidden', isSharing);
     switchScreenBtn.disabled = shareBusy;
     shareModalStart.disabled = shareBusy;
@@ -1262,7 +1380,9 @@
       mic: 'Transmite só a voz do microfone escolhido — nada do som do computador.',
       none: 'A transmissão sai sem áudio.',
     };
-    shareAudioHint.textContent = hints[shareSettings.audioMode] || '';
+    shareAudioHint.textContent = camera && shareSettings.audioMode === 'system'
+      ? 'Áudio do sistema só está disponível na transmissão de tela.'
+      : hints[shareSettings.audioMode] || '';
   }
 
   async function populateMicDevices() {
@@ -1283,6 +1403,31 @@
       if (current && !found) {
         // Dispositivo sumiu (tirado da tomada / permissão revogada): volta ao padrão.
         shareSettings.micDeviceId = '';
+        persistShareSettings();
+      }
+    } catch {
+      /* sem enumerateDevices */
+    }
+  }
+
+  /** Lista câmeras reais e virtuais (OBS, ManyCam, etc.). */
+  async function populateCameraDevices() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const inputs = devices.filter((d) => d.kind === 'videoinput' && d.deviceId);
+      shareCameraSelect.innerHTML = '<option value="">Câmera padrão</option>';
+      inputs.forEach((device, index) => {
+        const option = document.createElement('option');
+        option.value = device.deviceId;
+        option.textContent = device.label || `Câmera ${index + 1}`;
+        shareCameraSelect.appendChild(option);
+      });
+      const current = shareSettings.cameraDeviceId;
+      const found = current && inputs.some((d) => d.deviceId === current);
+      shareCameraSelect.value = found ? current : '';
+      if (current && !found) {
+        shareSettings.cameraDeviceId = '';
         persistShareSettings();
       }
     } catch {
@@ -1561,7 +1706,19 @@
     startSharing();
   });
   switchScreenBtn.addEventListener('click', () => {
-    switchScreen();
+    switchSource();
+  });
+
+  segSource.addEventListener('click', (event) => {
+    const btn = event.target.closest('.seg-btn');
+    if (!btn || btn.disabled) return;
+    setShareSource(btn.dataset.value);
+  });
+
+  shareCameraSelect.addEventListener('change', async () => {
+    shareSettings.cameraDeviceId = shareCameraSelect.value;
+    persistShareSettings();
+    if (isSharing && isCameraSource()) await switchSource();
   });
 
   segResolution.addEventListener('click', (event) => {
@@ -1690,7 +1847,7 @@
   window.addEventListener('beforeunload', () => {
     if (videoPipeline) videoPipeline.stop();
     if (localShareStream) stopStreamTracks(localShareStream);
-    if (rawDisplayStream) stopStreamTracks(rawDisplayStream);
+    if (rawSourceStream) stopStreamTracks(rawSourceStream);
     if (shareMicTrack) stopTrack(shareMicTrack);
   });
 
@@ -1708,7 +1865,7 @@
       return signalLog;
     },
     get state() {
-      return { phase, deafened, isSharing, serverMuted, code };
+      return { phase, deafened, isSharing, serverMuted, code, source: shareSettings.source };
     },
     // Diagnóstico detalhado dos pares WebRTC (somente leitura).
     pcStates() {

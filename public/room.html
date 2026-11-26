@@ -6,7 +6,7 @@
   <title>Sala — TT GG Transmissão</title>
   <meta name="robots" content="noindex" />
   <link rel="stylesheet" href="/styles.css" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f8fff'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='14' font-weight='800' fill='white' text-anchor='middle'%3ETT%3C/text%3E%3C/svg%3E" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%238f959e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='14' font-weight='800' fill='white' text-anchor='middle'%3ETT%3C/text%3E%3C/svg%3E" />
 </head>
 <body>
   <!-- estado: conectando -->
@@ -72,8 +72,8 @@
 
         <div class="empty-state" id="emptyState">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
-          <span class="title">Ninguém está compartilhando a tela</span>
-          <span class="sub">Quando alguém iniciar um compartilhamento, ele aparecerá aqui.</span>
+          <span class="title">Ninguém está transmitindo</span>
+          <span class="sub">Quando alguém iniciar uma transmissão, ela aparecerá aqui.</span>
         </div>
       </main>
     </div>
@@ -165,6 +165,15 @@
 
       <div class="share-settings">
         <div class="setting-group">
+          <p class="field-label">Fonte do vídeo</p>
+          <div class="seg" id="segSource" role="group" aria-label="Fonte do vídeo transmitido">
+            <button type="button" class="seg-btn" data-value="screen">Tela</button>
+            <button type="button" class="seg-btn" data-value="camera">Webcam</button>
+          </div>
+          <select class="input mt-4 hidden" id="shareCameraSelect" aria-label="Câmera transmitida"></select>
+        </div>
+
+        <div class="setting-group">
           <p class="field-label">Resolução</p>
           <div class="seg" id="segResolution" role="group" aria-label="Resolução da transmissão">
             <button type="button" class="seg-btn" data-value="720p">720p</button>
@@ -199,10 +208,10 @@
       <div class="modal-actions">
         <button type="button" class="btn-secondary hidden" id="switchScreenBtn">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-3"/><path d="M8 21h8"/><path d="M12 17v4"/><rect x="7" y="9" width="7" height="6" rx="1"/></svg>
-          Trocar tela
+          <span id="switchScreenLabel">Trocar tela</span>
         </button>
         <button type="button" class="btn-ghost" id="shareModalClose">Fechar</button>
-        <button type="button" class="btn-primary hidden" id="shareModalStart">Compartilhar tela</button>
+        <button type="button" class="btn-primary hidden" id="shareModalStart"><span id="shareStartLabel">Compartilhar tela</span></button>
       </div>
     </div>
   </div>

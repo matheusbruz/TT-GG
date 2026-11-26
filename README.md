@@ -1,6 +1,6 @@
 # TT GG Transmissão
 
-Salas de transmissão de tela + áudio em tempo real (WebRTC mesh + Socket.IO).
+Salas de transmissão de tela/webcam + áudio em tempo real (WebRTC mesh + Socket.IO).
 
 ## Rodar localmente
 
@@ -20,10 +20,11 @@ Abra **http://localhost:3000**.
 ## O que o app faz
 
 - **Transmissão**
-  - Compartilhar tela com áudio (sistema, microfone ou nenhum).
+  - Transmitir tela ou webcam (inclui câmeras virtuais, ex.: OBS).
+  - Áudio: sistema (tela), microfone ou nenhum.
   - Até 3 transmissões simultâneas.
   - Qualidade: 720p/1080p × 30/60 fps.
-  - Trocar tela/fonte de áudio durante a transmissão.
+  - Trocar tela/câmera/fonte de áudio durante a transmissão.
   - Volume individual por transmissão (slider + mudo).
 
 - **Participantes**
